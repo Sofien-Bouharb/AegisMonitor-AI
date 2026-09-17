@@ -2,7 +2,6 @@
 #   docker compose --profile dev up -d    # monitoring + logs only
 #   docker compose --profile ai up -d     # FastAPI + Ollama only
 #   docker compose --profile full up -d   # everything
-
 services:
   node-exporter:
     image: prom/node-exporter:latest
@@ -15,8 +14,8 @@ services:
     volumes:
       - /:/host:ro,rslave
     command:
-      - '--path.rootfs=/host'
-      - '--collector.filesystem.mount-points-exclude=^/(dev|proc|sys|var/lib/docker/.+)($$|/)'
+      - "--path.rootfs=/host"
+      - "--collector.filesystem.mount-points-exclude=^/(dev|proc|sys|var/lib/docker/.+)($$|/)"
 
   prometheus:
     image: prom/prometheus:latest
@@ -29,8 +28,8 @@ services:
       - ./prometheus:/etc/prometheus:Z
       - prometheus-data:/prometheus
     command:
-      - '--config.file=/etc/prometheus/prometheus.yml'
-      - '--storage.tsdb.retention.time=30d'
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.retention.time=30d"
     depends_on:
       - node-exporter
 
