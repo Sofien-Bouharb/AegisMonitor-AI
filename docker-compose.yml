@@ -1,5 +1,5 @@
 # Usage:
-#   docker compose --profile dev up -d    # monitoring + logs only
+#   docker compose --profile dev up -d    # monitoring + logs
 #   docker compose --profile ai up -d     # FastAPI + Ollama only
 #   docker compose --profile full up -d   # everything
 services:
@@ -81,19 +81,37 @@ services:
   #   profiles: ["ai", "full"]
   #   ...
 
-  # --- Log pipeline (added in Weeks 3-4) ---
-  # loki:
-  #   image: grafana/loki:latest
-  #   profiles: ["dev", "full"]
-  #   ...
-  #
-  # fluent-bit:
-  #   image: fluent/fluent-bit:latest
-  #   profiles: ["dev", "full"]
-  #   ...
+  # --- Log pipeline ---
+  loki:
+    image: grafana/loki:latest
+    container_name: loki
+    profiles: ["dev", "full"]
+    restart: unless-stopped
+    ports:
+      - "3100:3100"
+    volumes:
+      - ./loki/loki-config.yml:/etc/loki/local-config.yaml:Z
+      - loki-data:/loki
+    command:
+      - "-config.file=/etc/loki/local-config.yaml"
 
+  fluent-bit:
+    image: fluent/fluent-bit:latest
+    container_name: fluent-bit
+    profiles: ["dev", "full"]
+    restart: unless-stopped
+    volumes:
+      - ./fluent-bit/config/fluent-bit.conf:/fluent-bit/etc/fluent-bit.conf:Z
+      - /run/log/journal:/run/log/journal:ro
+      - /var/log/journal:/var/log/journal:ro
+      - /etc/machine-id:/etc/machine-id:ro
+      - fluent-bit-state:/fluent-bit/state
+    depends_on:
+      - loki
 volumes:
   prometheus-data:
   grafana-data:
   postgres-data:
   redis-data:
+  loki-data:
+  fluent-bit-state:
