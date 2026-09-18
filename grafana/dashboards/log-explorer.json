@@ -20,36 +20,36 @@
   "graphTooltip": 1,
   "id": null,
   "links": [],
- "templating": {
-  "list": [
-    {
-      "name": "host",
-      "label": "Host",
-      "type": "custom",
-      "query": "fedora",
-      "includeAll": true,
-      "multi": true,
-      "current": {
-        "selected": true,
-        "text": "All",
-        "value": "$__all"
+  "templating": {
+    "list": [
+      {
+        "name": "host",
+        "label": "Host",
+        "type": "custom",
+        "query": "fedora",
+        "includeAll": true,
+        "multi": true,
+        "current": {
+          "selected": true,
+          "text": "All",
+          "value": "$__all"
+        }
+      },
+      {
+        "name": "service",
+        "label": "Service",
+        "type": "custom",
+        "query": "kernel",
+        "includeAll": true,
+        "multi": true,
+        "current": {
+          "selected": true,
+          "text": "All",
+          "value": "$__all"
+        }
       }
-    },
-    {
-      "name": "service",
-      "label": "Service",
-      "type": "custom",
-      "query": "kernel",
-      "includeAll": true,
-      "multi": true,
-      "current": {
-        "selected": true,
-        "text": "All",
-        "value": "$__all"
-      }
-    }
-  ]
-},
+    ]
+  },
   "panels": [
     {
       "datasource": {
@@ -157,9 +157,7 @@
         "justifyMode": "auto",
         "orientation": "auto",
         "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
+          "calcs": ["lastNotNull"],
           "fields": "",
           "values": false
         },
@@ -171,7 +169,7 @@
             "type": "loki",
             "uid": "P8E80F9AEF21F6940"
           },
-          "expr": "sum(count_over_time({job=\"fluent-bit\"} | json | _HOSTNAME=~\"$host\" | SYSLOG_IDENTIFIER=~\"$service\" |~ \"(?i)error|failed|critical\" [5m]))",
+          "expr": "{job=\"fluent-bit\"} | json | _HOSTNAME=~\"$host\" | SYSLOG_IDENTIFIER=~\"$service\" | PRIORITY=~\"0|1|2|3\"",
           "queryType": "range",
           "refId": "A"
         }
@@ -211,7 +209,7 @@
             "type": "loki",
             "uid": "P8E80F9AEF21F6940"
           },
-          "expr": "{job=\"fluent-bit\"} | json | _HOSTNAME=~\"$host\" | SYSLOG_IDENTIFIER=~\"$service\" |~ \"(?i)error|failed|critical\"",
+          "expr": "sum(count_over_time({job=\"fluent-bit\"} | json | _HOSTNAME=~\"$host\" | SYSLOG_IDENTIFIER=~\"$service\" | PRIORITY=~\"0|1|2|3\" [5m]))",
           "queryType": "range",
           "refId": "A"
         }
@@ -222,12 +220,7 @@
   ],
   "refresh": "10s",
   "schemaVersion": 41,
-  "tags": [
-    "aegismonitor",
-    "logs",
-    "loki",
-    "systemd"
-  ],
+  "tags": ["aegismonitor", "logs", "loki", "systemd"],
   "time": {
     "from": "now-1h",
     "to": "now"

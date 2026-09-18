@@ -102,8 +102,8 @@ services:
     restart: unless-stopped
     volumes:
       - ./fluent-bit/config/fluent-bit.conf:/fluent-bit/etc/fluent-bit.conf:Z
-      - /run/log/journal:/run/log/journal:ro
-      - /var/log/journal:/var/log/journal:ro
+      - /run/log/journal:/run/log/journal:ro,z
+      - /var/log/journal:/var/log/journal:ro,z
       - /etc/machine-id:/etc/machine-id:ro
       - fluent-bit-state:/fluent-bit/state
     depends_on:
