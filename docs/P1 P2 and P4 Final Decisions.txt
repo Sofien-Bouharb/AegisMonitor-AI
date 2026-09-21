@@ -1,0 +1,473 @@
+P1, P2, and P4 — Final Decisions and Rules
+
+This is the consolidated reference for the decisions made for these three points. These decisions should be treated as the current design baseline when implementing the corresponding parts of AegisMonitor later.
+
+1. P1 — Event / Alert / Anomaly / Incident Model
+
+* Core principle:
+
+  * AegisMonitor must distinguish between Event, Alert, Anomaly, LogSignature, and Incident.
+  * These are different concepts and must not be collapsed into a single generic "signal" entity.
+
+* Event:
+
+  * An Event represents an observed occurrence.
+  * An event is not necessarily bad or actionable.
+  * Examples:
+
+    * CPU crossed a threshold.
+    * A systemd message was emitted.
+    * Authentication failures occurred.
+    * Disk throughput changed.
+  * Proposed fields:
+
+    * id
+    * occurred_at
+    * source
+    * event_type
+    * host
+    * service
+    * environment
+    * message
+    * log_signature_id, nullable
+    * metadata, JSONB
+    * created_at
+    * severity-related fields are subject to the P4 contract rather than being arbitrarily defined here.
+  * UUIDs should be used for IDs, preferably generated with PostgreSQL `gen_random_uuid()`.
+
+* Alert:
+
+  * An Alert represents a deterministic monitoring rule that has fired.
+  * Example:
+
+    * Prometheus detects CPU > 90% for 5 minutes.
+  * An alert is not automatically an incident.
+  * Proposed fields:
+
+    * id
+    * fingerprint
+    * rule_name
+    * source
+    * host
+    * service
+    * environment
+    * severity
+    * status
+    * fired_at
+    * resolved_at, nullable
+    * labels
+    * annotations
+    * created_at
+    * updated_at
+  * The `fingerprint` is important for Alertmanager integration.
+  * Alert status should reflect the Alertmanager lifecycle, such as `firing` and `resolved`.
+  * We should avoid unnecessarily duplicating Alertmanager state.
+
+* Anomaly:
+
+  * An Anomaly represents statistical or behavioral unusualness detected by a model.
+  * Example:
+
+    * Isolation Forest detects an unusual combination of CPU, memory, disk I/O, and network behavior.
+  * An anomaly is different from a deterministic Prometheus alert.
+  * Proposed fields:
+
+    * id
+    * model_name
+    * model_version
+    * host
+    * service
+    * environment
+    * detected_at
+    * score
+    * severity
+    * status
+    * features, JSONB
+    * explanation
+    * created_at
+  * `features` being JSONB is appropriate because model features can evolve and may contain values such as CPU, memory, disk read/write, and network measurements.
+  * Exact anomaly-score-to-severity thresholds are intentionally deferred to P15, after the actual Isolation Forest behavior and score distribution are known.
+
+* LogSignature:
+
+  * Signature is explicitly a log-specific concept.
+  * Mentally, it should be treated as `LogSignature`, not as a generic pattern shared by every signal type.
+  * P6-P8 specifically concern Fluent Bit/Loki log signature normalization and cardinality.
+  * Proposed fields:
+
+    * id
+    * signature
+    * source
+    * description
+    * first_seen_at
+    * last_seen_at
+    * occurrence_count
+    * created_at
+    * updated_at
+  * A unique constraint should exist on `(source, signature)`.
+  * A LogSignature should not become a generic representation of metric anomalies.
+  * If metric pattern normalization is eventually needed, it should be represented separately, for example by a future `MetricPattern` concept.
+
+* Incident:
+
+  * An Incident represents a higher-level correlated situation.
+  * It is not simply another name for an alert.
+  * An incident can contain multiple independent pieces of evidence.
+  * Proposed fields:
+
+    * id
+    * title
+    * description
+    * status
+    * severity
+    * host
+    * service
+    * environment
+    * opened_at
+    * updated_at
+    * resolved_at
+    * created_at
+  * Initial incident status vocabulary:
+
+    * `open`
+    * `acknowledged`
+    * `resolved`
+    * `closed`
+  * The exact relationship between individual signal resolution and incident resolution is a future correlation-engine decision, not a schema decision.
+
+* Many-to-many correlation:
+
+  * An incident must be able to contain multiple alerts, anomalies, events, and log signatures.
+  * The model must therefore support:
+
+    * one incident → many signals
+    * one signal → potentially many incidents
+  * We explicitly rejected a flat `incident -> single event` design because it would require restructuring once real correlation is implemented.
+
+* Junction tables:
+
+  * We chose explicit relational junction tables instead of a generic polymorphic `signals` table.
+  * The four junction tables are:
+
+    * `incident_alerts`
+    * `incident_anomalies`
+    * `incident_events`
+    * `incident_log_signatures`
+  * We rejected a generic structure such as:
+
+    * `signal_type`
+    * `signal_id`
+  * Reason:
+
+    * It would not provide proper PostgreSQL foreign-key integrity.
+    * It would create polymorphic-FK problems.
+    * Explicit junction tables are clearer and easier to query, index, and maintain.
+
+* Shared junction metadata:
+
+  * All four junction tables should follow the same conceptual structure:
+
+    * `incident_id`
+    * signal-specific ID
+    * `role`
+    * `relevance`
+    * `first_seen_at`
+    * `last_seen_at`
+    * `created_at`
+  * `role` describes what the signal contributes to the incident.
+  * Initial role vocabulary:
+
+    * `primary`
+    * `contributing`
+    * `supporting`
+    * `evidence`
+  * `relevance` represents how strongly the signal is considered relevant to the incident.
+  * It should be a `DOUBLE PRECISION` value constrained to:
+
+    * `0.0 <= relevance <= 1.0`
+
+* Junction uniqueness:
+
+  * Each junction table should have a composite primary key consisting of:
+
+    * `incident_id`
+    * corresponding signal ID
+  * This prevents the same signal from being attached to the same incident more than once.
+
+* Junction indexes:
+
+  * Indexes should support both directions:
+
+    * finding all signals belonging to an incident
+    * finding incidents associated with a particular signal
+  * This is important for correlation queries and historical investigation.
+
+* Foreign-key deletion behavior:
+
+  * Deleting an incident may cascade to its junction rows.
+  * Deleting an incident must not delete the underlying alerts, anomalies, events, or log signatures.
+  * Those signals are independent historical facts.
+  * In a mature implementation, physical deletion of historical incidents/signals should generally be avoided anyway.
+
+* UUID strategy:
+
+  * IDs should use UUIDs rather than serial/bigserial IDs.
+  * PostgreSQL `gen_random_uuid()` is the preferred generation mechanism.
+  * Reason:
+
+    * Better fit for distributed or multi-host collection.
+    * Signals can be created independently by different components.
+    * Avoids sequential ID exposure.
+    * Makes future distributed architecture easier.
+
+* Important separation:
+
+  * Event, Alert, and Anomaly are not interchangeable.
+  * A deterministic alert is not automatically an anomaly.
+  * An anomaly is not automatically an incident.
+  * A recurring log signature is evidence/pattern information, not automatically an incident.
+  * The correlation layer will eventually determine when several signals represent one incident.
+
+2. P2 — PostgreSQL vs Redis Responsibilities
+
+* Core principle:
+
+  * PostgreSQL is the durable source of truth.
+  * Redis is ephemeral operational state.
+
+* PostgreSQL responsibilities:
+
+  * PostgreSQL should contain durable information that must survive restarts and remain available for historical investigation.
+  * It will eventually persist:
+
+    * incidents
+    * alerts
+    * anomalies
+    * events
+    * log signatures
+    * relationships between incidents and signals
+    * incident status/history
+    * AI analysis
+    * human feedback
+  * PostgreSQL therefore represents the authoritative historical record of what AegisMonitor knows.
+
+* Redis responsibilities:
+
+  * Redis should contain temporary state needed to operate the system efficiently.
+  * Planned uses include:
+
+    * deduplication
+    * correlation windows
+    * cooldowns
+    * rate limiting
+    * temporary correlation state
+    * caching
+  * Redis data should not be treated as the permanent historical record.
+
+* Architectural rule:
+
+  * If losing the information after a Redis restart would damage historical truth, that information belongs in PostgreSQL.
+  * If the information is temporary operational state used to make the system work efficiently in real time, Redis is appropriate.
+
+* Correlation example:
+
+  * Redis can temporarily remember that several related signals have occurred within a correlation window.
+  * Once the system determines the resulting incident and its durable state, the incident belongs in PostgreSQL.
+  * Redis can then retain only whatever temporary state is needed for continued correlation/deduplication.
+
+* Caching:
+
+  * Redis may cache frequently accessed information.
+  * The cache must not become the authoritative copy of the data.
+
+* General architectural principle:
+
+  * PostgreSQL answers:
+
+    * "What actually happened?"
+    * "What incidents have existed?"
+    * "What signals contributed?"
+    * "What did the AI conclude?"
+    * "What feedback was given?"
+  * Redis answers:
+
+    * "What temporary state do I need right now to process incoming information efficiently?"
+
+* Implementation timing:
+
+  * We deliberately did not rush into implementing the final PostgreSQL/Redis layer during P1/P2.
+  * P18 and P19 are where the actual persistence and operational-state integrations are planned.
+  * This allows the schema and severity semantics to be settled first.
+
+3. P4 — AegisMonitor Severity Contract
+
+* Core principle:
+
+  * "Severity" is not one judgment occurring repeatedly.
+  * Several different components make different judgments that happen to use the concept of severity.
+  * These judgments must remain semantically distinct.
+
+* Shared operational severity vocabulary:
+
+  * AegisMonitor uses one common vocabulary:
+
+    * `info`
+    * `warning`
+    * `error`
+    * `critical`
+  * This vocabulary applies to:
+
+    * alert severity
+    * anomaly severity
+    * incident severity
+  * Using one vocabulary avoids translation layers during correlation, querying, dashboards, and AI analysis.
+
+* `PRIORITY`:
+
+  * `PRIORITY` is not part of the AegisMonitor operational severity vocabulary.
+  * It represents the original priority provided by the source system.
+  * For example, systemd may provide:
+
+    * `PRIORITY=3`
+  * We preserve that source information rather than replacing it with an AegisMonitor judgment.
+
+* `detected_level`:
+
+  * `detected_level` is also separate from operational severity.
+  * It represents AegisMonitor's interpretation/classification of what an observed log or event says.
+  * Example:
+
+    * a log may have `PRIORITY=4`
+    * AegisMonitor may interpret its content as `detected_level=error`
+  * This distinction became particularly important when considering the `ath9k` case.
+  * The source's priority and AegisMonitor's interpretation are different pieces of evidence and must not be collapsed.
+
+* Why `PRIORITY` and `detected_level` remain separate:
+
+  * `PRIORITY` answers:
+
+    * "What priority did the source assign to this message?"
+  * `detected_level` answers:
+
+    * "What level did AegisMonitor detect from the observed content?"
+  * Operational severity answers a different question:
+
+    * "How significant is this condition for the system?"
+  * Combining these concepts would blur source evidence with operational assessment.
+
+* Alert severity:
+
+  * Alert severity represents the operational importance of a deterministic monitoring rule firing.
+  * Example:
+
+    * A Prometheus rule detects sustained high CPU.
+    * The rule may assign `warning`.
+  * The alert's severity is determined by the monitoring rule and its intended operational meaning.
+  * An alert is still not automatically an incident.
+
+* Anomaly severity:
+
+  * Anomaly severity represents the operational importance assigned to a statistical/behavioral anomaly.
+  * The model itself produces an anomaly score.
+  * AegisMonitor can later map model output/context to the shared severity vocabulary.
+  * Exact score thresholds are intentionally not defined in P4.
+  * They will be determined during P15 after the Isolation Forest is implemented and real score distributions can be observed.
+
+* Incident severity:
+
+  * Incident severity represents the operational significance of the correlated situation as a whole.
+  * It must be derived from the combined evidence associated with the incident.
+  * It must not simply inherit the severity of whichever signal arrived first.
+  * It must not be assumed automatically that:
+
+    * `incident.severity = max(contributing signal severities)`
+  * The exact aggregation mechanism is deliberately deferred to P17.
+
+* P17 future severity decision:
+
+  * When implementing correlation, we must explicitly determine how:
+
+    * signal severity
+    * signal role
+    * signal relevance
+    * number of contributing signals
+    * potentially other contextual factors
+      contribute to incident severity.
+  * The previously established `role` and `relevance` fields in the incident junction tables are available for this purpose.
+  * A signal with low relevance should not automatically dominate an incident merely because its severity value is high.
+  * P17 must therefore define an explicit incident-severity aggregation policy rather than quietly falling back to a simple maximum.
+
+* Database implications:
+
+  * Eventually, the following fields should use the shared operational severity contract:
+
+    * `alerts.severity`
+    * `anomalies.severity`
+    * `incidents.severity`
+  * The allowed values are:
+
+    * `info`
+    * `warning`
+    * `error`
+    * `critical`
+  * PostgreSQL should eventually enforce this with an enum or `CHECK` constraint.
+  * The actual database constraint/migration is intentionally deferred until the PostgreSQL persistence implementation in P18, rather than prematurely creating a partial schema.
+
+* What P4 does not define:
+
+  * It does not define Isolation Forest score thresholds.
+  * It does not define the final incident-severity aggregation formula.
+  * It does not redefine systemd/Linux `PRIORITY`.
+  * It does not make `detected_level` equivalent to operational severity.
+  * Those decisions belong to the later stages where the necessary real data and correlation behavior exist.
+
+4. Cross-cutting rules established across P1, P2, and P4
+
+* Do not collapse different concepts merely because they are related.
+
+  * Event is not Alert.
+  * Alert is not Anomaly.
+  * Anomaly is not Incident.
+  * LogSignature is not a generic anomaly/pattern entity.
+  * Source `PRIORITY` is not operational severity.
+  * `detected_level` is not operational severity.
+
+* Prefer explicit relational structures over generic abstractions when PostgreSQL can enforce the relationship directly.
+
+  * This is why explicit incident junction tables were chosen instead of a polymorphic signal table.
+
+* Preserve original evidence.
+
+  * AegisMonitor should add interpretations and operational judgments without destroying the source information from which those judgments were derived.
+
+* Do not prematurely hard-code values that depend on later empirical behavior.
+
+  * Isolation Forest thresholds belong to P15.
+  * Incident severity aggregation belongs to P17.
+  * Final PostgreSQL constraints belong with the persistence implementation in P18.
+
+* Correlation is a first-class design concern.
+
+  * The P1 schema was intentionally designed so P17 can combine multiple independent signals into one incident without restructuring the database.
+
+* PostgreSQL is the durable truth.
+
+  * Redis is operational/temporary state.
+  * Redis should never silently become the historical source of truth.
+
+* One common operational severity vocabulary is used across alerts, anomalies, and incidents:
+
+  * `info`
+  * `warning`
+  * `error`
+  * `critical`
+
+Current status of these decisions:
+
+* P1 — Event / Alert / Anomaly / Incident model: complete
+* P2 — PostgreSQL vs Redis responsibilities: complete
+* P3 — Disk I/O: complete
+* P4 — Severity contract: complete
+
+These decisions form the design baseline for the later implementation of P5 onward, especially P6-P9, P11-P12, P15-P19, and P20-P24.
+
