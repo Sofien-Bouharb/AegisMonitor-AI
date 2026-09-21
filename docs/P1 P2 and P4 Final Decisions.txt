@@ -333,27 +333,26 @@ This is the consolidated reference for the decisions made for these three points
 
 * `detected_level`:
 
-  * `detected_level` is also separate from operational severity.
-  * It represents AegisMonitor's interpretation/classification of what an observed log or event says.
-  * Example:
-
-    * a log may have `PRIORITY=4`
-    * AegisMonitor may interpret its content as `detected_level=error`
-  * This distinction became particularly important when considering the `ath9k` case.
-  * The source's priority and AegisMonitor's interpretation are different pieces of evidence and must not be collapsed.
+  * `detected_level` is separate from operational severity.
+  * detected_level is a log-level classification automatically derived by Loki's log-level discovery mechanism from the observed log content.
+  * It is not a severity judgment made by AegisMonitor's correlation, anomaly-detection, or alerting logic.
+  * Its presence should therefore be treated as additional log metadata rather than as AegisMonitor's operational severity.
 
 * Why `PRIORITY` and `detected_level` remain separate:
 
   * `PRIORITY` answers:
 
-    * "What priority did the source assign to this message?"
+    * "What priority did the source system assign to this message?"
+
   * `detected_level` answers:
 
-    * "What level did AegisMonitor detect from the observed content?"
+    * "What log level did the Loki logging layer automatically detect from the log content?"
+
   * Operational severity answers a different question:
 
     * "How significant is this condition for the system?"
-  * Combining these concepts would blur source evidence with operational assessment.
+
+  * These three concepts must not be collapsed.
 
 * Alert severity:
 

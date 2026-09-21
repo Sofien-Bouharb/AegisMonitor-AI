@@ -4,7 +4,7 @@
 #   docker compose --profile full up -d   # everything
 services:
   node-exporter:
-    image: prom/node-exporter:latest
+    image: prom/node-exporter:v1.12.1
     container_name: node-exporter
     profiles: ["dev", "full"]
     restart: unless-stopped
@@ -18,7 +18,7 @@ services:
       - "--collector.filesystem.mount-points-exclude=^/(dev|proc|sys|var/lib/docker/.+)($$|/)"
 
   prometheus:
-    image: prom/prometheus:latest
+    image: prom/prometheus:v3.14.0
     container_name: prometheus
     profiles: ["dev", "full"]
     restart: unless-stopped
@@ -34,7 +34,7 @@ services:
       - node-exporter
 
   grafana:
-    image: grafana/grafana:latest
+    image: grafana/grafana:13.2.2
     container_name: grafana
     profiles: ["dev", "full"]
     restart: unless-stopped
@@ -83,7 +83,7 @@ services:
 
   # --- Log pipeline ---
   loki:
-    image: grafana/loki:latest
+    image: grafana/loki:3.7.8
     container_name: loki
     profiles: ["dev", "full"]
     restart: unless-stopped
@@ -96,12 +96,13 @@ services:
       - "-config.file=/etc/loki/local-config.yaml"
 
   fluent-bit:
-    image: fluent/fluent-bit:latest
+    image: fluent/fluent-bit:5.1.2
     container_name: fluent-bit
     profiles: ["dev", "full"]
     restart: unless-stopped
     volumes:
       - ./fluent-bit/config/fluent-bit.conf:/fluent-bit/etc/fluent-bit.conf:Z
+      - ./fluent-bit/scripts/normalize_signature.lua:/fluent-bit/scripts/normalize_signature.lua:ro,Z
       - /run/log/journal:/run/log/journal:ro,z
       - /var/log/journal:/var/log/journal:ro,z
       - /etc/machine-id:/etc/machine-id:ro
