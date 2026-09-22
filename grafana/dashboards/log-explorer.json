@@ -169,7 +169,7 @@
             "type": "loki",
             "uid": "P8E80F9AEF21F6940"
           },
-          "expr": "{job=\"fluent-bit\"} | json | _HOSTNAME=~\"$host\" | SYSLOG_IDENTIFIER=~\"$service\" | detected_level=\"error\"",
+          "expr": "{job=\"fluent-bit\"} | json | _HOSTNAME=~\"$host\" | SYSLOG_IDENTIFIER=~\"$service\" | detected_level=~\"error|critical\"",
           "queryType": "range",
           "refId": "A"
         }
@@ -209,13 +209,13 @@
             "type": "loki",
             "uid": "P8E80F9AEF21F6940"
           },
-          "expr": "sum(count_over_time({job=\"fluent-bit\"} | json | _HOSTNAME=~\"$host\" | SYSLOG_IDENTIFIER=~\"$service\" | detected_level=\"error\" [5m]))",
+          "expr": "sum(count_over_time({job=\"fluent-bit\"} | json | _HOSTNAME=~\"$host\" | SYSLOG_IDENTIFIER=~\"$service\" | detected_level=~\"error|critical\" [5m]))",
           "queryType": "range",
           "refId": "A"
         }
       ],
-      "title": "Errors (Last 5m)",
-      "type": "stat"
+      "title": "Errors & Critical Events",
+      "type": "timeseries"
     }
   ],
   "refresh": "10s",
