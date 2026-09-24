@@ -109,10 +109,19 @@ def run_cpu(duration, intensity):
                 process.join()
 
 
-
 def run_memory(duration, intensity):
-    # 16 MiB at 1% -> approximately 512 MiB at 100%.
-    size_mb = max(16, int(16 + 496 * intensity / 100))
+    # Scale memory usage with available system RAM.
+    # At 100%, target approximately 85% of available RAM.
+    available_mb = int(
+        os.sysconf("SC_PAGE_SIZE")
+        * os.sysconf("SC_PHYS_PAGES")
+        / (1024 * 1024)
+    )
+
+    target_mb = int(available_mb * 0.85 * intensity / 100)
+
+    # Keep a reasonable minimum for low-intensity tests.
+    size_mb = max(16, target_mb)
     size = size_mb * 1024 * 1024
 
     print(
@@ -142,6 +151,7 @@ def run_memory(duration, intensity):
     finally:
         del data
 
+        
 
 def run_disk(duration, intensity):
     # 1-100 MiB/s target.

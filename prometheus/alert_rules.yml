@@ -1,0 +1,92 @@
+groups:
+  - name: infrastructure_alerts
+    interval: 15s
+    rules:
+      - alert: HighCPUUsage
+        expr: |
+          100 * (1 - avg by (instance) (
+            rate(node_cpu_seconds_total{mode="idle"}[5m])
+          )) > 85
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High CPU usage on {{ $labels.instance }}"
+          description: "CPU usage has exceeded 85% for 2 minutes."
+
+      - alert: HighMemoryUsage
+        expr: |
+          100 * (
+            1 - node_memory_MemAvailable_bytes
+            / node_memory_MemTotal_bytes
+          ) > 90
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High memory usage on {{ $labels.instance }}"
+          description: "Memory usage has exceeded 90% for 2 minutes."
+
+      - alert: LowDiskSpace
+        expr: |
+          100 * (
+            node_filesystem_avail_bytes{
+              mountpoint="/",
+              fstype!~"tmpfs|overlay"
+            }
+            /
+            node_filesystem_size_bytes{
+              mountpoint="/",
+              fstype!~"tmpfs|overlay"
+            }
+          ) < 10
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Low disk space on {{ $labels.instance }}"
+          description: "Available space on the root filesystem is below 10%."
+
+      - alert: HostDown
+        expr: up{job="node-exporter"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Node Exporter is unavailable"
+          description: "Prometheus has been unable to scrape Node Exporter for 1 minute."
+
+      - alert: HighDiskReadRate
+        expr: |
+          sum by (instance) (
+            rate(node_disk_read_bytes_total{
+              device!~"loop.*|ram.*"
+            }[5m])
+          ) > 100000000
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High disk read activity"
+          description: "Disk read throughput exceeds 100 MB/s for 2 minutes."
+
+
+
+      - alert: HighDiskWriteRate
+        expr: |
+          sum by (instance) (
+            rate(node_disk_written_bytes_total{
+              device!~"loop.*|ram.*"
+            }[5m])
+          ) > 100000000
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High disk write activity"
+          description: "Disk write throughput exceeds 100 MB/s for 2 minutes."
+
+
+  
+
+    

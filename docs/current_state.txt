@@ -1,0 +1,207 @@
+AegisMonitor AI — Current Project State
+
+Project overview:
+
+* AegisMonitor AI is a self-hosted infrastructure monitoring and anomaly-detection platform running locally on Fedora.
+* The project combines DevOps, observability, AI/ML, cybersecurity, distributed systems, and MLOps concepts.
+* The long-term goal is to collect infrastructure metrics and logs, detect abnormal behavior, correlate different signals, explain incidents, and eventually provide AI-assisted root-cause analysis and remediation suggestions.
+* The project is intentionally being developed incrementally through the PRD roadmap, one point at a time.
+* Current authoritative repository: `~/Projects/aegismonitor`.
+
+Current infrastructure stack:
+
+* Docker Engine on Fedora
+* Docker Compose
+* Node Exporter
+* Prometheus
+* Grafana
+* Loki
+* Fluent Bit
+* PostgreSQL
+* Redis
+
+Observability pipeline:
+
+* Fedora systemd journal
+  → Fluent Bit
+  → Loki
+  → Grafana
+* Host metrics
+  → Node Exporter
+  → Prometheus
+  → Grafana
+* Prometheus is currently evaluating alert rules every 15 seconds.
+* Grafana has dashboards for host metrics and log exploration.
+* Loki is receiving normalized system logs from Fluent Bit.
+* Fluent Bit maintains persistent journal state.
+* SELinux-related permissions that previously prevented Fluent Bit from reading the journal have been resolved.
+
+Current Docker image versions:
+
+* Node Exporter: `prom/node-exporter:v1.12.1`
+* Prometheus: `prom/prometheus:v3.14.0`
+* Grafana: `grafana/grafana:13.2.2`
+* PostgreSQL: `postgres:16-alpine`
+* Redis: `redis:7-alpine`
+* Loki: `grafana/loki:3.7.8`
+* Fluent Bit: `fluent/fluent-bit:5.1.2`
+
+Main service ports:
+
+* Grafana: `localhost:3000`
+* Prometheus: `localhost:9090`
+* Node Exporter: `localhost:9100`
+* Loki: `localhost:3100`
+
+Roadmap status:
+
+* P1 — Event / Alert / Anomaly / Incident model: Complete
+* P2 — PostgreSQL vs Redis responsibilities: Complete
+* P3 — Disk I/O monitoring: Complete
+* P4 — Severity contract: Complete
+* P5 — Docker image pinning: Complete
+* P6 — Log signature normalization: Complete
+* P7 — Signature cardinality validation: Complete
+* P8 — Loki signature field strategy: Complete
+* P9 — Grafana log/error visualization validation: Complete
+* P10 — Controlled workload generator: Complete
+* P11 — Prometheus alert rules: Complete
+* P12 onward: Not started
+
+Important architectural decisions already established:
+
+P1 — Signal model:
+
+* Event, Alert, Anomaly, and Incident are separate concepts.
+* An Incident can be associated with multiple signals.
+* The intended relationship is many-to-many through explicit per-type junction tables.
+* Junction metadata includes:
+
+  * `role`: primary, contributing, supporting, evidence
+  * `relevance`: numerical relevance value
+* UUIDs are preferred.
+* Log signatures represent log-origin events.
+* Anomalies represent statistical judgments over metrics and are not simply log patterns.
+
+Example conceptual correlation:
+
+* CPU anomaly = primary signal with high relevance.
+* An `ath9k` log signature = supporting evidence.
+* Multiple signals can contribute to the same incident.
+
+P2 — Data ownership:
+
+* PostgreSQL is the durable source of truth.
+* Redis is intended for ephemeral operational state.
+* Redis should not replace PostgreSQL as the persistent system of record.
+
+P4 — Severity:
+
+* Shared operational severity vocabulary:
+
+  * `info`
+  * `warning`
+  * `error`
+  * `critical`
+* `PRIORITY` and `detected_level` remain source/Aegis interpretation metadata.
+* They are not the same thing as the operational severity.
+* Incident severity should not simply default to the maximum severity of its contributing signals.
+
+Important implementation constraint:
+
+* P1, P2, and P4 are currently design decisions.
+* PostgreSQL migrations, final schemas, enums, constraints, foreign keys, indexes, etc. are intentionally postponed until P18.
+* P5–P17 are meant to refine and validate the architecture before persistence is implemented.
+
+Logging/signature state:
+
+* Fluent Bit normalizes log signatures using:
+  `fluent-bit/scripts/normalize_signature.lua`
+* The normalized `signature` is stored as a JSON field.
+* The original `MESSAGE` is preserved.
+* `signature` is deliberately not a Loki label to avoid unnecessary label cardinality.
+* Signature cardinality was tested against the current dataset.
+* Grafana log/error visualization has been validated.
+
+Workload generator:
+
+* `scripts/load_gen.py` is implemented for controlled testing.
+* Supported workloads:
+
+  * CPU
+  * memory
+  * disk
+  * network
+  * errors
+  * combined
+* The memory workload was improved to scale according to the actual system RAM instead of allocating only a fixed 512 MiB.
+* The disk workload currently generates write activity using a temporary file.
+* During P11 testing, the disk workload hit `OSError: [Errno 122] Disk quota exceeded` during a long write test, but the temporary file was cleaned up and the filesystem remained healthy.
+* This is a known characteristic of the current workload generator and not a failure of the monitoring stack.
+
+P11 — Prometheus alerting:
+Six production alerts are currently configured:
+
+* `HighCPUUsage`
+
+  * CPU > 85% for 2 minutes
+  * warning
+
+* `HighMemoryUsage`
+
+  * Memory > 90% for 2 minutes
+  * warning
+
+* `LowDiskSpace`
+
+  * Root filesystem available space < 10% for 2 minutes
+  * warning
+
+* `HostDown`
+
+  * Node Exporter unavailable for 1 minute
+  * critical
+
+* `HighDiskReadRate`
+
+  * Aggregate disk read rate > 100 MB/s for 2 minutes
+  * warning
+
+* `HighDiskWriteRate`
+
+  * Aggregate disk write rate > 100 MB/s for 2 minutes
+  * warning
+
+All six have been experimentally validated.
+
+P11 testing confirmed:
+
+* CPU: Pending → Firing
+* Memory: Pending → Firing
+* Disk space: tested safely with a temporary threshold
+* Host down: Pending → Firing → Recovery
+* Disk read: tested safely with a temporary threshold
+* Disk write: tested safely with a temporary threshold
+
+All temporary test rules were removed afterward.
+
+Current Prometheus configuration:
+
+* `prometheus/prometheus.yml`
+* `prometheus/alert_rules.yml`
+* Prometheus configuration and alert rules have been validated using `promtool`.
+* Final state contains six production alert rules.
+
+Current project maturity:
+
+* The project has moved beyond simply running monitoring tools.
+* There is now a functioning observability foundation, structured log processing, normalized signatures, controlled workload generation, and a validated Prometheus alerting layer.
+* The architectural concepts for events, alerts, anomalies, incidents, severity, persistence, and ephemeral state have already been defined.
+* However, the actual persistent Aegis domain/database layer has intentionally not been implemented yet.
+
+Current boundary:
+
+* We are finished with P11.
+* P12 has not started.
+* We should not jump ahead or implement the PostgreSQL persistence layer yet.
+* The next work should follow the PRD roadmap sequentially when you decide to continue.
