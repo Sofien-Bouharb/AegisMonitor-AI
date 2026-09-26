@@ -33,6 +33,20 @@ services:
     depends_on:
       - node-exporter
 
+  alertmanager:
+    image: prom/alertmanager:v0.29.0
+    container_name: alertmanager
+    profiles: ["dev", "full"]
+    restart: unless-stopped
+    command:
+      - "--config.file=/etc/alertmanager/alertmanager.yml"
+      - "--storage.path=/alertmanager"
+    ports:
+      - "9093:9093"
+    volumes:
+      - ./alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro,Z
+      - alertmanager-data:/alertmanager
+
   grafana:
     image: grafana/grafana:13.2.2
     container_name: grafana
@@ -116,3 +130,4 @@ volumes:
   redis-data:
   loki-data:
   fluent-bit-state:
+  alertmanager-data:
