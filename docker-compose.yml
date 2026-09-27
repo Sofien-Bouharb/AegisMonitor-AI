@@ -2,6 +2,15 @@
 #   docker compose --profile dev up -d    # monitoring + logs
 #   docker compose --profile ai up -d     # FastAPI + Ollama only
 #   docker compose --profile full up -d   # everything
+
+secrets:
+  telegram_bot_token:
+    file: /home/sofien/.config/aegismonitor/secrets/telegram_bot_token
+  telegram_chat_id:
+    file: /home/sofien/.config/aegismonitor/secrets/telegram_chat_id
+
+
+
 services:
   node-exporter:
     image: prom/node-exporter:v1.12.1
@@ -46,6 +55,11 @@ services:
     volumes:
       - ./alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro,Z
       - alertmanager-data:/alertmanager
+    secrets:
+      - telegram_bot_token
+      - telegram_chat_id
+
+
 
   grafana:
     image: grafana/grafana:13.2.2

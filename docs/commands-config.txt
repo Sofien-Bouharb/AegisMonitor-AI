@@ -1,0 +1,26 @@
+mkdir -p ~/.config/aegismonitor/secrets
+chmod 700 ~/.config/aegismonitor
+chmod 700 ~/.config/aegismonitor/secrets
+
+read -rsp "Enter your Telegram bot token: " BOT_TOKEN
+echo
+printf '%s' "$BOT_TOKEN" > ~/.config/aegismonitor/secrets/telegram_bot_token
+unset BOT_TOKEN
+
+
+sudo chgrp nobody ~/.config/aegismonitor/secrets/telegram_bot_token
+sudo chmod 640 ~/.config/aegismonitor/secrets/telegram_bot_token
+
+
+printf '%s\n' '7686787736' > ~/.config/aegismonitor/secrets/telegram_chat_id
+chmod 600 ~/.config/aegismonitor/secrets/telegram_chat_id
+
+ls -l ~/.config/aegismonitor/secrets/
+
+docker compose --profile dev config --quiet
+
+docker compose --profile dev ps
+
+curl -s http://localhost:9093/-/ready
+
+NB: file: /home/sofien/.config/aegismonitor/secrets/telegram_bot_token
