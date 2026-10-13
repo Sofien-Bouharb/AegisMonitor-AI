@@ -29,6 +29,31 @@ AEGIS_FEATURES = {
 }
 
 
+
+FEATURE_EXPERIMENTS = {
+    "CPU only": [0],
+    "Load only": [1],
+    "Memory only": [5],
+    "Disk read only": [10],
+    "Disk write only": [15],
+    "Network receive only": [18],
+    "Network transmit only": [19],
+
+    "CPU + load": [0, 1],
+    "CPU + memory": [0, 5],
+    "CPU + load + memory": [0, 1, 5],
+    "CPU + disk read": [0, 10],
+    "CPU + disk write": [0, 15],
+    "CPU + disk read + write": [0, 10, 15],
+    "CPU + network receive": [0, 18],
+    "CPU + network transmit": [0, 19],
+    "CPU + network receive + transmit": [0, 18, 19],
+
+    "All AegisMonitor features": [0, 1, 5, 10, 15, 18, 19],
+    "All variable features": list(range(38)),
+}
+
+
 def load_matrix(path):
     with path.open(newline="") as file:
         data = [
@@ -62,6 +87,35 @@ def evaluate(name, train, test, labels, selected_indices):
     X_fit = fit_data[:, usable_indices]
     X_validation = validation_data[:, usable_indices]
     X_test = test[:, usable_indices]
+
+
+    if name == "Experiment B — AegisMonitor feature subset":
+        print("\nFeature distribution diagnostics (median, p10, p90):")
+
+        for column, feature_index in enumerate(usable_indices):
+            feature_name = AEGIS_FEATURES[int(feature_index)]
+
+            fit_values = X_fit[:, column]
+            validation_values = X_validation[:, column]
+            test_values = X_test[:, column]
+            normal_test = test_values[labels == 0]
+            anomaly_test = test_values[labels == 1]
+
+            def summary(values):
+                return (
+                    f"median={np.median(values):.4f}, "
+                    f"p10={np.quantile(values, 0.10):.4f}, "
+                    f"p90={np.quantile(values, 0.90):.4f}"
+                )
+
+            print(f"\n  {feature_name}:")
+            print(f"    Fit:           {summary(fit_values)}")
+            print(f"    Validation:    {summary(validation_values)}")
+            print(f"    Test (all):    {summary(test_values)}")
+            print(f"    Test (normal): {summary(normal_test)}")
+            print(f"    Test (anomaly): {summary(anomaly_test)}")
+
+
 
     model = IsolationForest(
         n_estimators=200,
@@ -124,6 +178,26 @@ def evaluate(name, train, test, labels, selected_indices):
     print("Confusion matrix [normal, anomaly]:")
     print(confusion_matrix(labels, predictions, labels=[0, 1]))
 
+    return {
+        "experiment": name,
+        "features": ",".join(
+            AEGIS_FEATURES.get(int(index), str(index))
+            for index in usable_indices
+        ),
+        "feature_count": len(usable_indices),
+        "roc_auc": roc_auc,
+        "average_precision": average_precision,
+        "precision": precision,
+        "recall": recall,
+        "f1": f1,
+        "threshold": threshold,
+        "false_positives": int(
+            confusion_matrix(labels, predictions, labels=[0, 1])[0, 1]
+        ),
+        "false_negatives": int(
+            confusion_matrix(labels, predictions, labels=[0, 1])[1, 0]
+        ),
+    }
 
 def main():
     train = load_matrix(DATA_DIR / "train.txt")
@@ -142,15 +216,48 @@ def main():
     all_indices = list(range(train.shape[1]))
     aegis_indices = list(AEGIS_FEATURES.keys())
 
-    evaluate(
-        "Experiment A — all SMD features",
-        train, test, labels, all_indices
-    )
-    evaluate(
-        "Experiment B — AegisMonitor feature subset",
-        train, test, labels, aegis_indices
+    results = []
+
+    for experiment_name, feature_indices in FEATURE_EXPERIMENTS.items():
+        result = evaluate(
+            experiment_name, train, test, labels, feature_indices
+        )
+        results.append(result)
+
+    print("\n\n" + "=" * 100)
+    print("EXPERIMENT SUMMARY")
+    print("=" * 100)
+
+    print(
+        f"{'Experiment':<38}"
+        f"{'ROC-AUC':>10}"
+        f"{'Avg Prec.':>12}"
+        f"{'Precision':>12}"
+        f"{'Recall':>10}"
+        f"{'F1':>10}"
     )
 
+    for result in results:
+        print(
+            f"{result['experiment']:<38}"
+            f"{result['roc_auc']:>10.4f}"
+            f"{result['average_precision']:>12.4f}"
+            f"{result['precision']:>12.4f}"
+            f"{result['recall']:>10.4f}"
+            f"{result['f1']:>10.4f}"
+        )
+
+    best_result = max(results, key=lambda result: result["f1"])
+    print(f"\nBest F1: {best_result['experiment']} ({best_result['f1']:.4f})")
+
+    results_path = Path("ml/p15_experiment_results.csv")
+
+    with results_path.open("w", newline="") as file:
+        writer = csv.DictWriter(file, fieldnames=results[0].keys())
+        writer.writeheader()
+        writer.writerows(results)
+
+    print(f"\nResults saved to: {results_path}")
 
 if __name__ == "__main__":
     main()
