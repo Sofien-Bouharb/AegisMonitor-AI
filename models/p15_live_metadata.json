@@ -1,0 +1,26 @@
+{
+  "model": "IsolationForest",
+  "features": [
+    "cpu_usage_pct",
+    "memory_usage_pct",
+    "disk_write_bytes_per_second",
+    "network_receive_bytes_per_second",
+    "load1"
+  ],
+  "random_state": 42,
+  "n_estimators": 200,
+  "max_samples": "auto",
+  "contamination": "auto",
+  "fit_samples": 1546,
+  "validation_samples": 387,
+  "fit_start_utc": "2026-10-14T21:02:56.834648+00:00",
+  "fit_end_utc": "2026-10-15T03:29:12.045903+00:00",
+  "validation_start_utc": "2026-10-15T03:29:27.046073+00:00",
+  "validation_end_utc": "2026-10-15T05:05:57.098143+00:00",
+  "target_validation_tail_fraction": 0.01,
+  "anomaly_threshold_on_score_samples": -0.5770024523040965,
+  "validation_flagged": 4,
+  "validation_flagged_fraction": 0.0103359173126615,
+  "trained_at_utc": "2026-10-15T10:56:43.179355+00:00",
+  "note": "Initial baseline trained on mostly idle live telemetry. Validation threshold is not proof of a 1% future false-positive rate. No ground-truth live anomaly labels are available."
+}
