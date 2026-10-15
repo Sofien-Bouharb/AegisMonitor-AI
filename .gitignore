@@ -7,3 +7,6 @@ node_modules/
 data/smd/
 # Generated live telemetry data
 data/telemetry/
+
+# Local model backups
+models/archive/
