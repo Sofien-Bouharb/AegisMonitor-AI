@@ -11,8 +11,6 @@ alerting:
         - targets:
             - "alertmanager:9093"
 
-
-
 scrape_configs:
   - job_name: "node-exporter"
     static_configs:
@@ -24,6 +22,14 @@ scrape_configs:
   - job_name: "prometheus"
     static_configs:
       - targets: ["localhost:9090"]
+
+  - job_name: "anomaly-exporter"
+    scrape_interval: 15s
+    static_configs:
+      - targets: ["anomaly-exporter:9101"]
+        labels:
+          host: "localhost"
+          env: "local"
 
 # Alerting rules will be added here in Weeks 5-6
 # rule_files:

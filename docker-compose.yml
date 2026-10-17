@@ -9,8 +9,6 @@ secrets:
   telegram_chat_id:
     file: /home/sofien/.config/aegismonitor/secrets/telegram_chat_id
 
-
-
 services:
   node-exporter:
     image: prom/node-exporter:v1.12.1
@@ -42,6 +40,24 @@ services:
     depends_on:
       - node-exporter
 
+  # --- P16: Isolation Forest anomaly exporter ---
+  anomaly-exporter:
+    build: ./ml/anomaly_exporter
+    container_name: anomaly-exporter
+    profiles: ["dev", "full"]
+    restart: unless-stopped
+    environment:
+      PROMETHEUS_URL: "http://prometheus:9090/api/v1/query"
+      MODEL_PATH: "/models/model.joblib"
+      METADATA_PATH: "/models/metadata.json"
+      EXPORTER_PORT: "9101"
+      EVALUATION_INTERVAL_SECONDS: "15"
+    volumes:
+      - ./models/p15_live_isolation_forest_v2.joblib:/models/model.joblib:ro,Z
+      - ./models/p15_live_metadata_v2.json:/models/metadata.json:ro,Z
+    depends_on:
+      - prometheus
+
   alertmanager:
     image: prom/alertmanager:v0.29.0
     container_name: alertmanager
@@ -58,8 +74,6 @@ services:
     secrets:
       - telegram_bot_token
       - telegram_chat_id
-
-
 
   grafana:
     image: grafana/grafana:13.2.2
@@ -137,6 +151,7 @@ services:
       - fluent-bit-state:/fluent-bit/state
     depends_on:
       - loki
+
 volumes:
   prometheus-data:
   grafana-data:
