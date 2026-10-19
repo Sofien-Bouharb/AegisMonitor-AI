@@ -20,9 +20,15 @@ receivers:
       - bot_token_file: "/run/secrets/telegram_bot_token"
         chat_id: 7686787736
         send_resolved: true
+    webhook_configs:
+      - url: "http://alert-receiver:8080/api/v1/alerts"
+        send_resolved: true
 
   - name: "critical"
     telegram_configs:
       - bot_token_file: "/run/secrets/telegram_bot_token"
         chat_id: 7686787736 
+        send_resolved: true
+    webhook_configs:
+      - url: "http://alert-receiver:8080/api/v1/alerts"
         send_resolved: true

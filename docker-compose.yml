@@ -104,6 +104,25 @@ services:
     volumes:
       - postgres-data:/var/lib/postgresql/data
 
+  # --- P18: Alertmanager PostgreSQL persistence ---
+  alert-receiver:
+    build:
+      context: .
+      dockerfile: ml/alert_receiver/Dockerfile
+    container_name: alert-receiver
+    profiles: ["dev", "full"]
+    restart: unless-stopped
+    environment:
+      ALERT_RECEIVER_HOST: "0.0.0.0"
+      ALERT_RECEIVER_PORT: "8080"
+      POSTGRES_HOST: "postgres"
+      POSTGRES_PORT: "5432"
+      POSTGRES_USER: ${POSTGRES_USER:-aegis}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-aegis}
+      POSTGRES_DB: ${POSTGRES_DB:-aegismonitor}
+    depends_on:
+      - postgres
+
   redis:
     image: redis:7-alpine
     container_name: redis

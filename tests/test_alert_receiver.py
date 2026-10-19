@@ -30,7 +30,7 @@ class AlertReceiverTests(unittest.TestCase):
     @patch("ml.alert_receiver.app.save_alert")
     @patch("ml.alert_receiver.app.connect")
     def test_persists_firing_alert(self, mock_connect, mock_save):
-        conn = mock_connect.return_value.__enter__.return_value
+        conn = mock_connect.return_value
 
         persist_alert(self.alert)
 

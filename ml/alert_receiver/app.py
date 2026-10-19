@@ -61,7 +61,8 @@ def persist_alert(alert: dict) -> None:
     service = labels.get("service")
     environment = labels.get("environment") or labels.get("env")
 
-    with connect() as conn:
+    conn = connect()
+    try:
         save_alert(
             conn,
             fingerprint=fingerprint,
@@ -77,6 +78,8 @@ def persist_alert(alert: dict) -> None:
             service=service,
             environment=environment,
         )
+    finally:
+        conn.close()
 
 
 class AlertmanagerWebhookHandler(BaseHTTPRequestHandler):
