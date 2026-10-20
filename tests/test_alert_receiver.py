@@ -27,13 +27,22 @@ class AlertReceiverTests(unittest.TestCase):
             datetime(2026, 10, 19, 12, 0, tzinfo=timezone.utc),
         )
 
+    @patch("ml.alert_receiver.app.create_client")
     @patch("ml.alert_receiver.app.save_alert")
     @patch("ml.alert_receiver.app.connect")
-    def test_persists_firing_alert(self, mock_connect, mock_save):
+    def test_persists_firing_alert(
+        self, mock_connect, mock_save, mock_create_client
+    ):
         conn = mock_connect.return_value
+        redis_client = mock_create_client.return_value
+        redis_client.set.return_value = True
 
-        persist_alert(self.alert)
+        result = persist_alert(self.alert)
 
+        self.assertTrue(result)
+        mock_create_client.assert_called_once_with()
+        redis_client.set.assert_called_once()
+        redis_client.close.assert_called_once_with()
         mock_connect.assert_called_once_with()
         mock_save.assert_called_once()
         self.assertIs(mock_save.call_args.args[0], conn)
@@ -47,19 +56,52 @@ class AlertReceiverTests(unittest.TestCase):
             "localhost:9100",
         )
 
+    @patch("ml.alert_receiver.app.create_client")
     @patch("ml.alert_receiver.app.save_alert")
     @patch("ml.alert_receiver.app.connect")
-    def test_persists_resolved_alert(self, mock_connect, mock_save):
+    def test_persists_resolved_alert(
+        self, mock_connect, mock_save, mock_create_client
+    ):
+        mock_create_client.return_value.set.return_value = True
         self.alert["status"] = "resolved"
         self.alert["endsAt"] = "2026-10-19T12:05:00Z"
 
-        persist_alert(self.alert)
+        result = persist_alert(self.alert)
 
+        self.assertTrue(result)
         self.assertEqual(mock_save.call_args.kwargs["status"], "resolved")
         self.assertEqual(
             mock_save.call_args.kwargs["resolved_at"],
             datetime(2026, 10, 19, 12, 5, tzinfo=timezone.utc),
         )
+
+    @patch("ml.alert_receiver.app.create_client")
+    @patch("ml.alert_receiver.app.connect")
+    def test_skips_duplicate_delivery(self, mock_connect, mock_create_client):
+        redis_client = mock_create_client.return_value
+        redis_client.set.return_value = False
+
+        result = persist_alert(self.alert)
+
+        self.assertFalse(result)
+        mock_connect.assert_not_called()
+        redis_client.close.assert_called_once_with()
+
+    @patch("ml.alert_receiver.app.release_alert_delivery")
+    @patch("ml.alert_receiver.app.create_client")
+    @patch("ml.alert_receiver.app.save_alert", side_effect=RuntimeError("database unavailable"))
+    @patch("ml.alert_receiver.app.connect")
+    def test_releases_claim_when_persistence_fails(
+        self, mock_connect, mock_save, mock_create_client, mock_release
+    ):
+        redis_client = mock_create_client.return_value
+        redis_client.set.return_value = True
+
+        with self.assertRaisesRegex(RuntimeError, "database unavailable"):
+            persist_alert(self.alert)
+
+        mock_release.assert_called_once_with(redis_client, self.alert)
+        redis_client.close.assert_called_once_with()
 
     @patch("ml.alert_receiver.app.connect")
     def test_rejects_missing_fingerprint(self, mock_connect):

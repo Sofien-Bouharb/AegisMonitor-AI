@@ -120,8 +120,13 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-aegis}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-aegis}
       POSTGRES_DB: ${POSTGRES_DB:-aegismonitor}
+      REDIS_HOST: "redis"
+      REDIS_PORT: "6379"
+      REDIS_DB: "0"
+      REDIS_DEDUP_TTL_SECONDS: "300"
     depends_on:
       - postgres
+      - redis
 
   redis:
     image: redis:7-alpine

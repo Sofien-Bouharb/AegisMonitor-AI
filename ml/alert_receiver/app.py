@@ -7,6 +7,12 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from ml.database.connection import connect
 from ml.database.repository import save_alert
+from ml.state.deduplication import (
+    claim_alert_delivery,
+    deduplication_ttl_seconds,
+    release_alert_delivery,
+)
+from ml.state.redis_client import create_client
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -24,8 +30,11 @@ def parse_timestamp(value: str) -> datetime:
     return parsed.astimezone(timezone.utc)
 
 
-def persist_alert(alert: dict) -> None:
-    """Validate and persist one Alertmanager alert."""
+def persist_alert(alert: dict) -> bool:
+    """Deduplicate and persist one Alertmanager alert.
+
+    Returns False when an identical delivery was already processed.
+    """
     labels = alert.get("labels")
     annotations = alert.get("annotations")
     fingerprint = alert.get("fingerprint")
@@ -61,8 +70,20 @@ def persist_alert(alert: dict) -> None:
     service = labels.get("service")
     environment = labels.get("environment") or labels.get("env")
 
-    conn = connect()
+    client = create_client()
+    conn = None
+    claimed = False
     try:
+        claimed = claim_alert_delivery(
+            client,
+            alert,
+            ttl_seconds=deduplication_ttl_seconds(),
+        )
+        if not claimed:
+            logger.info("Skipping duplicate alert delivery: %s", fingerprint)
+            return False
+
+        conn = connect()
         save_alert(
             conn,
             fingerprint=fingerprint,
@@ -78,8 +99,15 @@ def persist_alert(alert: dict) -> None:
             service=service,
             environment=environment,
         )
+        return True
+    except Exception:
+        if claimed:
+            release_alert_delivery(client, alert)
+        raise
     finally:
-        conn.close()
+        if conn is not None:
+            conn.close()
+        client.close()
 
 
 class AlertmanagerWebhookHandler(BaseHTTPRequestHandler):
