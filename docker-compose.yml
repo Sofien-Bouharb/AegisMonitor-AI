@@ -131,21 +131,30 @@ services:
   redis:
     image: redis:7-alpine
     container_name: redis
-    profiles: ["dev", "full"]
+    profiles: ["dev", "ai", "full"]
     restart: unless-stopped
     volumes:
       - redis-data:/data
 
-  # --- AI profile services (added in Weeks 7-8, stubbed here for later) ---
-  # fastapi-ai:
-  #   build: ./fastapi-ai
-  #   profiles: ["ai", "full"]
-  #   ...
-  #
-  # ollama:
-  #   image: ollama/ollama:latest
-  #   profiles: ["ai", "full"]
-  #   ...
+  # --- P20: Correlation API ---
+  correlation-api:
+    build:
+      context: .
+      dockerfile: ml/api/Dockerfile
+    container_name: correlation-api
+    profiles: ["ai", "full"]
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      REDIS_HOST: "redis"
+      REDIS_PORT: "6379"
+      REDIS_DB: "0"
+      REDIS_CORRELATION_WINDOW_SECONDS: "300"
+    depends_on:
+      - redis
+
+  # Ollama integration will be added in a later milestone.
 
   # --- Log pipeline ---
   loki:
