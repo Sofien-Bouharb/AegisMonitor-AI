@@ -7,6 +7,9 @@ import redis
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from ml.api.incident_context import collect_anomaly_context
+from ml.api.prometheus_client import PrometheusError
+
 from ml.correlation.engine import (
     CorrelationEngine,
     Incident,
@@ -91,6 +94,18 @@ def _serialize_incident(incident: Incident) -> dict[str, Any]:
 def health() -> dict[str, str]:
     """Report process-level API health only."""
     return {"status": "ok"}
+
+
+@app.get("/api/v1/context/metrics")
+def incident_context_metrics() -> dict[str, Any]:
+    """Return a structured snapshot of anomaly-exporter metrics."""
+    try:
+        return collect_anomaly_context()
+    except PrometheusError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="Prometheus metrics are temporarily unavailable.",
+        ) from exc
 
 
 @app.post("/api/v1/correlate")

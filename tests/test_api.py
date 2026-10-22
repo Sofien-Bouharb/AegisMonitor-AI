@@ -8,6 +8,7 @@ import redis
 from fastapi.testclient import TestClient
 
 from ml.api.app import app
+from ml.api.prometheus_client import PrometheusError
 
 client = TestClient(app)
 
@@ -66,6 +67,37 @@ class CorrelationApiTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json(), {"status": "ok"})
+
+    @patch("ml.api.app.collect_anomaly_context")
+    def test_incident_context_metrics_endpoint(self, mock_context):
+        mock_context.return_value = {
+            "source": "prometheus",
+            "metrics": {
+                "anomaly_candidate": {
+                    "status": "available",
+                    "value": 1.0,
+                }
+            },
+        }
+
+        response = client.get("/api/v1/context/metrics")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), mock_context.return_value)
+
+    @patch("ml.api.app.collect_anomaly_context")
+    def test_incident_context_metrics_returns_503_on_prometheus_error(
+        self, mock_context
+    ):
+        mock_context.side_effect = PrometheusError("connection failed")
+
+        response = client.get("/api/v1/context/metrics")
+
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(
+            response.json()["detail"],
+            "Prometheus metrics are temporarily unavailable.",
+        )
 
     def test_correlates_alert_and_anomaly(self):
         response = client.post(

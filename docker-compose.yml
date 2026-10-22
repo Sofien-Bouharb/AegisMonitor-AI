@@ -151,6 +151,13 @@ services:
       REDIS_PORT: "6379"
       REDIS_DB: "0"
       REDIS_CORRELATION_WINDOW_SECONDS: "300"
+      PROMETHEUS_URL: "http://prometheus:9090"
+      LOKI_URL: "http://loki:3100"
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: ${POSTGRES_DB:-aegismonitor}
+      POSTGRES_USER: ${POSTGRES_USER:-aegis}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-aegis}
     depends_on:
       - redis
 

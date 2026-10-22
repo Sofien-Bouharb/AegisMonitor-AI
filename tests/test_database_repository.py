@@ -10,8 +10,11 @@ from ml.correlation.engine import (
     Severity,
     SignalType,
 )
-from ml.database.repository import save_alert, save_incident
-
+from ml.database.repository import (
+    list_recent_incidents,
+    save_alert,
+    save_incident,
+)
 
 class IncidentRepositoryTests(unittest.TestCase):
     def setUp(self):
@@ -242,5 +245,57 @@ class AlertRepositoryTests(unittest.TestCase):
         self.conn.transaction.assert_not_called()
 
 
+
 if __name__ == "__main__":
     unittest.main()
+
+
+
+class RecentIncidentRepositoryTests(unittest.TestCase):
+    def setUp(self):
+        self.conn = MagicMock()
+        self.cursor = self.conn.cursor.return_value.__enter__.return_value
+
+    def test_returns_recent_incidents_as_dictionaries(self):
+        self.cursor.description = [
+            MagicMock(name="id"),
+            MagicMock(name="title"),
+        ]
+        # Set .name explicitly because MagicMock's constructor name
+        # parameter does not set the attribute used by the repository.
+        self.cursor.description[0].name = "id"
+        self.cursor.description[1].name = "title"
+        self.cursor.fetchall.return_value = [
+            ("incident-1", "Recent incident"),
+            ("incident-2", "Older incident"),
+        ]
+
+        result = list_recent_incidents(self.conn, limit=10)
+
+        self.assertEqual(
+            result,
+            [
+                {"id": "incident-1", "title": "Recent incident"},
+                {"id": "incident-2", "title": "Older incident"},
+            ],
+        )
+        query, params = self.cursor.execute.call_args.args
+        self.assertIn("FROM incidents", query)
+        self.assertIn("ORDER BY opened_at DESC, id DESC", query)
+        self.assertIn("LIMIT %s", query)
+        self.assertEqual(params, (10,))
+
+    def test_returns_empty_list_when_no_incidents_exist(self):
+        self.cursor.description = [MagicMock()]
+        self.cursor.description[0].name = "id"
+        self.cursor.fetchall.return_value = []
+
+        self.assertEqual(list_recent_incidents(self.conn), [])
+
+    def test_rejects_invalid_limits_before_database_access(self):
+        for limit in (0, 101, True, 1.5, "10", None):
+            with self.subTest(limit=limit):
+                with self.assertRaises(ValueError):
+                    list_recent_incidents(self.conn, limit=limit)
+
+        self.conn.cursor.assert_not_called()

@@ -131,3 +131,30 @@ def save_alert(
                     Jsonb(annotations),
                 ),
             )
+
+def list_recent_incidents(
+    conn: psycopg.Connection,
+    *,
+    limit: int = 20,
+) -> list[dict]:
+    """Return a bounded list of recent incidents, newest first."""
+    if not isinstance(limit, int) or isinstance(limit, bool) or not 1 <= limit <= 100:
+        raise ValueError("limit must be between 1 and 100")
+
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT
+                id, title, description, status, severity, host,
+                service, environment, opened_at, updated_at, resolved_at
+            FROM incidents
+            ORDER BY opened_at DESC, id DESC
+            LIMIT %s
+            """,
+            (limit,),
+        )
+        columns = [column.name for column in cur.description]
+        return [
+            dict(zip(columns, row))
+            for row in cur.fetchall()
+        ]
