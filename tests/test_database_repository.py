@@ -299,3 +299,119 @@ class RecentIncidentRepositoryTests(unittest.TestCase):
                     list_recent_incidents(self.conn, limit=limit)
 
         self.conn.cursor.assert_not_called()
+
+class AIRepositoryTests(unittest.TestCase):
+    def setUp(self):
+        from uuid import UUID
+
+        self.conn = MagicMock()
+        self.cursor = self.conn.cursor.return_value.__enter__.return_value
+        self.analysis_id = UUID("00000000-0000-0000-0000-000000000010")
+        self.feedback_id = UUID("00000000-0000-0000-0000-000000000011")
+
+    def test_saves_ai_analysis_and_returns_id(self):
+        from ml.database.repository import save_ai_analysis
+
+        self.cursor.fetchone.return_value = (self.analysis_id,)
+        context = {"host": "localhost", "metrics": {"cpu_usage_pct": 95.0}}
+
+        result = save_ai_analysis(
+            self.conn,
+            analysis="CPU usage is unusually high.",
+            context=context,
+        )
+
+        self.assertEqual(result, str(self.analysis_id))
+        query, params = self.cursor.execute.call_args.args
+        self.assertIn("INSERT INTO ai_analyses", query)
+        self.assertIn("RETURNING id", query)
+        self.assertEqual(params[0], "CPU usage is unusually high.")
+        self.assertEqual(params[1].obj, context)
+        self.conn.transaction.assert_called_once()
+
+    def test_rejects_blank_analysis_before_database_access(self):
+        from ml.database.repository import save_ai_analysis
+
+        for analysis in ("", "   "):
+            with self.subTest(analysis=repr(analysis)):
+                with self.assertRaisesRegex(ValueError, "analysis cannot be blank"):
+                    save_ai_analysis(
+                        self.conn,
+                        analysis=analysis,
+                        context={},
+                    )
+
+        self.conn.cursor.assert_not_called()
+        self.conn.transaction.assert_not_called()
+
+    def test_rejects_non_dictionary_analysis_context(self):
+        from ml.database.repository import save_ai_analysis
+
+        with self.assertRaisesRegex(ValueError, "context must be a dictionary"):
+            save_ai_analysis(
+                self.conn,
+                analysis="Example analysis",
+                context=[],
+            )
+
+        self.conn.cursor.assert_not_called()
+
+    def test_saves_feedback_for_analysis_and_returns_id(self):
+        from ml.database.repository import save_ai_feedback
+
+        self.cursor.fetchone.return_value = (self.feedback_id,)
+        result = save_ai_feedback(
+            self.conn,
+            analysis_id=str(self.analysis_id),
+            verdict="helpful",
+            comment="The explanation matches the metrics.",
+        )
+
+        self.assertEqual(result, str(self.feedback_id))
+        query, params = self.cursor.execute.call_args.args
+        self.assertIn("INSERT INTO ai_feedback", query)
+        self.assertIn("RETURNING id", query)
+        self.assertEqual(str(params[0]), str(self.analysis_id))
+        self.assertEqual(params[1:], (
+            "helpful",
+            "The explanation matches the metrics.",
+        ))
+        self.conn.transaction.assert_called_once()
+
+    def test_rejects_unsupported_feedback_verdict(self):
+        from ml.database.repository import save_ai_feedback
+
+        with self.assertRaisesRegex(ValueError, "Unsupported feedback verdict"):
+            save_ai_feedback(
+                self.conn,
+                analysis_id=str(self.analysis_id),
+                verdict="maybe",
+            )
+
+        self.conn.cursor.assert_not_called()
+        self.conn.transaction.assert_not_called()
+
+    def test_rejects_invalid_analysis_id(self):
+        from ml.database.repository import save_ai_feedback
+
+        with self.assertRaisesRegex(ValueError, "valid UUID"):
+            save_ai_feedback(
+                self.conn,
+                analysis_id="not-a-uuid",
+                verdict="correct",
+            )
+
+        self.conn.cursor.assert_not_called()
+
+    def test_rejects_non_string_feedback_comment(self):
+        from ml.database.repository import save_ai_feedback
+
+        with self.assertRaisesRegex(ValueError, "comment must be a string"):
+            save_ai_feedback(
+                self.conn,
+                analysis_id=str(self.analysis_id),
+                verdict="incorrect",
+                comment=123,
+            )
+
+        self.conn.cursor.assert_not_called()

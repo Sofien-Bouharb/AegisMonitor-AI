@@ -95,7 +95,7 @@ services:
   postgres:
     image: postgres:16-alpine
     container_name: postgres
-    profiles: ["dev", "full"]
+    profiles: ["dev", "ai", "full"]
     restart: unless-stopped
     environment:
       - POSTGRES_USER=${POSTGRES_USER:-aegis}
@@ -158,10 +158,11 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-aegismonitor}
       POSTGRES_USER: ${POSTGRES_USER:-aegis}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-aegis}
+      OLLAMA_BASE_URL: "http://172.18.0.1:11434"
+      OLLAMA_MODEL: "llama3.1:8b"
     depends_on:
       - redis
-
-  # Ollama integration will be added in a later milestone.
+      - postgres
 
   # --- Log pipeline ---
   loki:

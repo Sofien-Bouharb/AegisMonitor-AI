@@ -8,6 +8,7 @@ import redis
 from fastapi.testclient import TestClient
 
 from ml.api.app import app
+from ml.api.ollama_client import OllamaError
 from ml.api.prometheus_client import PrometheusError
 
 client = TestClient(app)
@@ -300,3 +301,225 @@ class CorrelationApiTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class OllamaApiTests(unittest.TestCase):
+    @patch("ml.api.app.generate_text")
+    def test_ai_generate_returns_model_output(self, mock_generate):
+        mock_generate.return_value = "Check CPU and memory metrics."
+
+        response = client.post(
+            "/api/v1/ai/generate",
+            json={"prompt": "Analyze these metrics."},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.json(),
+            {"model_output": "Check CPU and memory metrics."},
+        )
+        mock_generate.assert_called_once_with("Analyze these metrics.")
+
+    @patch("ml.api.app.generate_text")
+    def test_ai_generate_returns_503_when_ollama_fails(self, mock_generate):
+        from ml.api.ollama_client import OllamaError
+
+        mock_generate.side_effect = OllamaError("connection refused")
+
+        response = client.post(
+            "/api/v1/ai/generate",
+            json={"prompt": "Analyze these metrics."},
+        )
+
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(
+            response.json()["detail"],
+            "Local AI generation is temporarily unavailable.",
+        )
+
+    def test_ai_generate_rejects_blank_prompt(self):
+        response = client.post(
+            "/api/v1/ai/generate",
+            json={"prompt": "   "},
+        )
+
+        self.assertEqual(response.status_code, 422)
+
+    def test_ai_generate_rejects_unknown_fields(self):
+        response = client.post(
+            "/api/v1/ai/generate",
+            json={"prompt": "Analyze metrics.", "system_override": True},
+        )
+
+        self.assertEqual(response.status_code, 422)
+
+
+    @patch("ml.api.app.save_ai_analysis", return_value="00000000-0000-0000-0000-000000000010")
+    @patch("ml.api.app.connect")
+    @patch("ml.api.app.generate_text")
+    @patch("ml.api.app.collect_anomaly_context")
+    def test_ai_analyze_returns_analysis_and_context(
+        self, mock_context, mock_generate, mock_connect, mock_save_analysis
+    ):
+        context = {
+            "source": "prometheus",
+            "metrics": {
+                "anomaly_candidate": {"status": "available", "value": 1.0}
+            },
+            "logs": {"status": "unavailable", "entries": []},
+            "incidents": {"status": "available", "entries": []},
+        }
+        mock_context.return_value = context
+        mock_generate.return_value = (
+            "An anomaly candidate was detected; this is not a confirmed incident."
+        )
+
+        response = client.post("/api/v1/ai/analyze")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.json(),
+            {
+                "analysis_id": "00000000-0000-0000-0000-000000000010",
+                "analysis": (
+                    "An anomaly candidate was detected; "
+                    "this is not a confirmed incident."
+                ),
+                "context": context,
+            },
+        )
+        mock_context.assert_called_once_with()
+        mock_save_analysis.assert_called_once_with(
+            mock_connect.return_value,
+            analysis=(
+                "An anomaly candidate was detected; "
+                "this is not a confirmed incident."
+            ),
+            context=context,
+        )
+        mock_connect.return_value.close.assert_called_once_with()
+        prompt = mock_generate.call_args.args[0]
+        self.assertIn('"anomaly_candidate"', prompt)
+        self.assertIn("not a confirmed incident", prompt)
+        self.assertIn("untrusted evidence", prompt)
+
+    @patch("ml.api.app.collect_anomaly_context")
+    def test_ai_analyze_returns_503_when_prometheus_fails(
+        self, mock_context
+    ):
+        mock_context.side_effect = PrometheusError("Prometheus unavailable")
+
+        response = client.post("/api/v1/ai/analyze")
+
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(
+            response.json()["detail"],
+            "Prometheus metrics are temporarily unavailable.",
+        )
+
+    @patch("ml.api.app.generate_text")
+    @patch("ml.api.app.collect_anomaly_context")
+    def test_ai_analyze_returns_503_when_ollama_fails(
+        self, mock_context, mock_generate
+    ):
+        mock_context.return_value = {
+            "source": "prometheus",
+            "metrics": {},
+            "logs": {"status": "unavailable", "entries": []},
+            "incidents": {"status": "unavailable", "entries": []},
+        }
+        mock_generate.side_effect = OllamaError("connection refused")
+
+        response = client.post("/api/v1/ai/analyze")
+
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(
+            response.json()["detail"],
+            "Local AI generation is temporarily unavailable.",
+        )
+
+
+class AIFeedbackApiTests(unittest.TestCase):
+    analysis_id = "00000000-0000-0000-0000-000000000010"
+
+    @patch("ml.api.app.save_ai_feedback", return_value="00000000-0000-0000-0000-000000000011")
+    @patch("ml.api.app.connect")
+    def test_saves_feedback(self, mock_connect, mock_save_feedback):
+        response = client.post(
+            "/api/v1/ai/feedback",
+            json={
+                "analysis_id": self.analysis_id,
+                "verdict": "helpful",
+                "comment": "The explanation matches the evidence.",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.json(),
+            {
+                "feedback_id": "00000000-0000-0000-0000-000000000011",
+                "status": "saved",
+            },
+        )
+        mock_save_feedback.assert_called_once_with(
+            mock_connect.return_value,
+            analysis_id=self.analysis_id,
+            verdict="helpful",
+            comment="The explanation matches the evidence.",
+        )
+        mock_connect.return_value.close.assert_called_once_with()
+
+    def test_rejects_invalid_verdict(self):
+        response = client.post(
+            "/api/v1/ai/feedback",
+            json={"analysis_id": self.analysis_id, "verdict": "maybe"},
+        )
+        self.assertEqual(response.status_code, 422)
+
+    def test_rejects_invalid_analysis_id(self):
+        response = client.post(
+            "/api/v1/ai/feedback",
+            json={"analysis_id": "not-a-uuid", "verdict": "correct"},
+        )
+        self.assertEqual(response.status_code, 422)
+
+    @patch("ml.api.app.save_ai_feedback")
+    @patch("ml.api.app.connect")
+    def test_returns_404_when_analysis_does_not_exist(
+        self, mock_connect, mock_save_feedback
+    ):
+        import psycopg
+
+        mock_save_feedback.side_effect = psycopg.errors.ForeignKeyViolation(
+            "analysis not found"
+        )
+        response = client.post(
+            "/api/v1/ai/feedback",
+            json={"analysis_id": self.analysis_id, "verdict": "correct"},
+        )
+
+        self.assertEqual(response.status_code, 404)
+        self.assertEqual(
+            response.json()["detail"],
+            "The requested AI analysis was not found.",
+        )
+        mock_connect.return_value.close.assert_called_once_with()
+
+    @patch("ml.api.app.connect", side_effect=Exception("connection failed"))
+    def test_returns_503_when_feedback_database_connection_fails(
+        self, mock_connect
+    ):
+        import psycopg
+
+        mock_connect.side_effect = psycopg.OperationalError("connection failed")
+        response = client.post(
+            "/api/v1/ai/feedback",
+            json={"analysis_id": self.analysis_id, "verdict": "incorrect"},
+        )
+
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(
+            response.json()["detail"],
+            "AI feedback persistence is temporarily unavailable.",
+        )

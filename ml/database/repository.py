@@ -158,3 +158,66 @@ def list_recent_incidents(
             dict(zip(columns, row))
             for row in cur.fetchall()
         ]
+
+
+def save_ai_analysis(
+    conn: psycopg.Connection,
+    *,
+    analysis: str,
+    context: dict,
+) -> str:
+    """Persist generated AI analysis and its evidence context; return its UUID."""
+    from psycopg.types.json import Jsonb
+
+    if not isinstance(analysis, str) or not analysis.strip():
+        raise ValueError("analysis cannot be blank")
+    if not isinstance(context, dict):
+        raise ValueError("context must be a dictionary")
+
+    with conn.transaction():
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO ai_analyses (analysis, context)
+                VALUES (%s, %s)
+                RETURNING id
+                """,
+                (analysis, Jsonb(context)),
+            )
+            analysis_id = cur.fetchone()[0]
+
+    return str(analysis_id)
+
+
+def save_ai_feedback(
+    conn: psycopg.Connection,
+    *,
+    analysis_id: str,
+    verdict: str,
+    comment: str | None = None,
+) -> str:
+    """Persist human feedback for an existing AI analysis; return its UUID."""
+    from uuid import UUID
+
+    if verdict not in {"helpful", "not_helpful", "correct", "incorrect"}:
+        raise ValueError("Unsupported feedback verdict")
+    try:
+        validated_analysis_id = UUID(analysis_id)
+    except (TypeError, ValueError, AttributeError) as exc:
+        raise ValueError("analysis_id must be a valid UUID") from exc
+    if comment is not None and not isinstance(comment, str):
+        raise ValueError("comment must be a string or None")
+
+    with conn.transaction():
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO ai_feedback (analysis_id, verdict, comment)
+                VALUES (%s, %s, %s)
+                RETURNING id
+                """,
+                (validated_analysis_id, verdict, comment),
+            )
+            feedback_id = cur.fetchone()[0]
+
+    return str(feedback_id)
