@@ -39,6 +39,12 @@ services:
       - "--storage.tsdb.retention.time=30d"
     depends_on:
       - node-exporter
+    healthcheck:
+      test: ["CMD", "promtool", "check", "ready", "--url=http://localhost:9090"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
 
   # --- P16: Isolation Forest anomaly exporter ---
   anomaly-exporter:
@@ -92,6 +98,17 @@ services:
     depends_on:
       - prometheus
 
+    healthcheck:
+      test:
+        - CMD
+        - /bin/sh
+        - -c
+        - "wget -q -O /dev/null http://127.0.0.1:3000/api/health"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
   postgres:
     image: postgres:16-alpine
     container_name: postgres
@@ -103,6 +120,13 @@ services:
       - POSTGRES_DB=${POSTGRES_DB:-aegismonitor}
     volumes:
       - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        ["CMD-SHELL", 'pg_isready -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
 
   # --- P18: Alertmanager PostgreSQL persistence ---
   alert-receiver:
@@ -125,8 +149,10 @@ services:
       REDIS_DB: "0"
       REDIS_DEDUP_TTL_SECONDS: "300"
     depends_on:
-      - postgres
-      - redis
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
 
   redis:
     image: redis:7-alpine
@@ -135,6 +161,12 @@ services:
     restart: unless-stopped
     volumes:
       - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
 
   # --- P20: Correlation API ---
   correlation-api:
@@ -161,8 +193,20 @@ services:
       OLLAMA_BASE_URL: "http://172.18.0.1:11434"
       OLLAMA_MODEL: "llama3.1:8b"
     depends_on:
-      - redis
-      - postgres
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
 
   # --- Log pipeline ---
   loki:
