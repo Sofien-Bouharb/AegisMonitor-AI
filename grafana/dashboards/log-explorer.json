@@ -25,28 +25,44 @@
       {
         "name": "host",
         "label": "Host",
-        "type": "custom",
-        "query": "fedora",
+        "type": "query",
+        "query": "label_values({job=\"fluent-bit\"}, _HOSTNAME)",
         "includeAll": true,
         "multi": true,
         "current": {
           "selected": true,
           "text": "All",
           "value": "$__all"
-        }
+        },
+        "datasource": {
+          "type": "loki",
+          "uid": "P8E80F9AEF21F6940"
+        },
+        "definition": "label_values({job=\"fluent-bit\"}, _HOSTNAME)",
+        "refresh": 2,
+        "sort": 1,
+        "allValue": ".*"
       },
       {
         "name": "service",
         "label": "Service",
-        "type": "custom",
-        "query": "kernel",
+        "type": "query",
+        "query": "label_values({job=\"fluent-bit\", _HOSTNAME=~\"$host\"}, SYSLOG_IDENTIFIER)",
         "includeAll": true,
         "multi": true,
         "current": {
           "selected": true,
           "text": "All",
           "value": "$__all"
-        }
+        },
+        "datasource": {
+          "type": "loki",
+          "uid": "P8E80F9AEF21F6940"
+        },
+        "definition": "label_values({job=\"fluent-bit\", _HOSTNAME=~\"$host\"}, SYSLOG_IDENTIFIER)",
+        "refresh": 2,
+        "sort": 1,
+        "allValue": ".*"
       }
     ]
   },
@@ -83,7 +99,7 @@
             "type": "loki",
             "uid": "P8E80F9AEF21F6940"
           },
-          "expr": "{job=\"fluent-bit\"} | json | _HOSTNAME=~\"$host\" | SYSLOG_IDENTIFIER=~\"$service\"",
+          "expr": "{job=\"fluent-bit\", _HOSTNAME=~\"$host\", SYSLOG_IDENTIFIER=~\"$service\"}",
           "queryType": "range",
           "refId": "A"
         }
@@ -124,7 +140,7 @@
             "type": "loki",
             "uid": "P8E80F9AEF21F6940"
           },
-          "expr": "sum(count_over_time({job=\"fluent-bit\"} | json | _HOSTNAME=~\"$host\" | SYSLOG_IDENTIFIER=~\"$service\" [5m]))",
+          "expr": "sum(count_over_time({job=\"fluent-bit\", _HOSTNAME=~\"$host\", SYSLOG_IDENTIFIER=~\"$service\"} [5m]))",
           "legendFormat": "Logs",
           "queryType": "range",
           "refId": "A"
@@ -169,7 +185,7 @@
             "type": "loki",
             "uid": "P8E80F9AEF21F6940"
           },
-          "expr": "{job=\"fluent-bit\"} | json | _HOSTNAME=~\"$host\" | SYSLOG_IDENTIFIER=~\"$service\" | detected_level=~\"error|critical\"",
+          "expr": "{job=\"fluent-bit\", _HOSTNAME=~\"$host\", SYSLOG_IDENTIFIER=~\"$service\"} | json | detected_level=~\"error|critical\"",
           "queryType": "range",
           "refId": "A"
         }
@@ -209,7 +225,7 @@
             "type": "loki",
             "uid": "P8E80F9AEF21F6940"
           },
-          "expr": "sum(count_over_time({job=\"fluent-bit\"} | json | _HOSTNAME=~\"$host\" | SYSLOG_IDENTIFIER=~\"$service\" | detected_level=~\"error|critical\" [5m]))",
+          "expr": "sum(count_over_time({job=\"fluent-bit\", _HOSTNAME=~\"$host\", SYSLOG_IDENTIFIER=~\"$service\"} | json | detected_level=~\"error|critical\" [5m]))",
           "queryType": "range",
           "refId": "A"
         }

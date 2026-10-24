@@ -18,6 +18,10 @@ scrape_configs:
         labels:
           host: "localhost"
           env: "local"
+    file_sd_configs:
+      - files:
+          - "/etc/prometheus/targets/node-exporters.yml"
+        refresh_interval: 30s
 
   - job_name: "prometheus"
     static_configs:
